@@ -174,3 +174,7 @@ def websocket(ws):
                     room["host_connected"] = False
                 else:
                     room["joiner_connected"] = False
+
+@app.route("/ws-test")
+def ws_test():
+    return "WebSocket route should be /ws"
