@@ -178,3 +178,28 @@ def websocket(ws):
 @app.route("/ws-test")
 def ws_test():
     return "WebSocket route should be /ws"
+
+@app.route("/rooms")
+def list_rooms():
+    with rooms_lock:
+        room_list = []
+
+        for code in rooms:
+            room = rooms[code]
+
+            room_list.append({
+                "code": code,
+                "game": room.get("game", ""),
+                "host_ready": room.get("host_ready", False),
+                "joiner_ready": room.get("joiner_ready", False),
+                "host_connected": room.get("host_connected", False),
+                "joiner_connected": room.get("joiner_connected", False),
+                "host_data": room.get("host_data", ""),
+                "joiner_data": room.get("joiner_data", ""),
+                "message_id": room.get("message_id", 0)
+            })
+
+        return jsonify({
+            "ok": True,
+            "rooms": room_list
+        })
