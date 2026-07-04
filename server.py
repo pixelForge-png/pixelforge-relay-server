@@ -92,7 +92,7 @@ def status():
             "message_id": room["message_id"]
         })
 
-
+@sock.route("/ws")
 def websocket(ws):
     code = request.args.get("code", "")
     player = request.args.get("player", "")
