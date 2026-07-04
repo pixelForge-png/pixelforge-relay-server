@@ -28,10 +28,11 @@ def create():
             "game": "",
             "host_ready": True,
             "joiner_ready": False,
-            "host_ws": None,
-            "joiner_ws": None,
+            "host_connected": False,
+            "joiner_connected": False,
             "host_data": "",
-            "joiner_data": ""
+            "joiner_data": "",
+            "message_id": 0
         }
 
     return jsonify({"ok": True, "code": code})
@@ -45,6 +46,7 @@ def join():
             return jsonify({"ok": False, "error": "room_not_found"}), 404
 
         rooms[code]["joiner_ready"] = True
+        rooms[code]["message_id"] += 1
         game = rooms[code]["game"]
 
     return jsonify({"ok": True, "code": code, "game": game})
@@ -59,18 +61,7 @@ def setgame():
             return jsonify({"ok": False, "error": "room_not_found"}), 404
 
         rooms[code]["game"] = game
-        host_ws = rooms[code].get("host_ws")
-        joiner_ws = rooms[code].get("joiner_ws")
-
-    # Tell connected players which game was picked.
-    msg = "GAME|" + game
-
-    for ws in [host_ws, joiner_ws]:
-        if ws is not None:
-            try:
-                ws.send(msg)
-            except:
-                pass
+        rooms[code]["message_id"] += 1
 
     return jsonify({"ok": True, "game": game})
 
@@ -90,8 +81,9 @@ def status():
             "game": room["game"],
             "host_ready": room["host_ready"],
             "joiner_ready": room["joiner_ready"],
-            "host_connected": room["host_ws"] is not None,
-            "joiner_connected": room["joiner_ws"] is not None
+            "host_connected": room["host_connected"],
+            "joiner_connected": room["joiner_connected"],
+            "message_id": room["message_id"]
         })
 
 @sock.route("/ws")
@@ -108,15 +100,13 @@ def websocket(ws):
             ws.send("ERR|room_not_found")
             return
 
-        room = rooms[code]
-
         if player == "host":
-            room["host_ws"] = ws
+            rooms[code]["host_connected"] = True
         else:
-            room["joiner_ws"] = ws
-            room["joiner_ready"] = True
+            rooms[code]["joiner_connected"] = True
+            rooms[code]["joiner_ready"] = True
 
-        game = room["game"]
+        game = rooms[code]["game"]
 
     ws.send("OK|" + code)
 
@@ -130,31 +120,41 @@ def websocket(ws):
             if msg is None:
                 break
 
-            # Message format:
-            # DATA|whatever
-            # Server forwards it to the other player.
-            if msg.startswith("DATA|"):
+            # Main fast sync message:
+            # SYNC|data
+            #
+            # Host sends full game state.
+            # Server replies with latest joiner data.
+            #
+            # Joiner sends paddle y.
+            # Server replies with latest host data.
+            if msg.startswith("SYNC|"):
+                data = msg[5:]
+
                 with rooms_lock:
                     room = rooms.get(code)
 
                     if room is None:
+                        ws.send("ERR|room_gone")
                         break
 
                     if player == "host":
-                        room["host_data"] = msg
-                        other_ws = room.get("joiner_ws")
+                        room["host_data"] = data
+                        peer_data = room["joiner_data"]
                     else:
-                        room["joiner_data"] = msg
-                        other_ws = room.get("host_ws")
+                        room["joiner_data"] = data
+                        peer_data = room["host_data"]
 
-                if other_ws is not None:
-                    try:
-                        other_ws.send(msg)
-                    except:
-                        pass
+                    room["message_id"] += 1
+                    message_id = room["message_id"]
+
+                ws.send("PEER|" + str(message_id) + "|" + peer_data)
 
             elif msg == "PING":
                 ws.send("PONG")
+
+            else:
+                ws.send("ERR|bad_msg")
 
     except Exception as e:
         print("WebSocket error:", e)
@@ -164,8 +164,7 @@ def websocket(ws):
             room = rooms.get(code)
 
             if room is not None:
-                if player == "host" and room.get("host_ws") is ws:
-                    room["host_ws"] = None
-
-                if player == "joiner" and room.get("joiner_ws") is ws:
-                    room["joiner_ws"] = None
+                if player == "host":
+                    room["host_connected"] = False
+                else:
+                    room["joiner_connected"] = False
