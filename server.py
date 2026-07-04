@@ -17,6 +17,10 @@ def make_code():
 def home():
     return "PixelForge WebSocket relay online"
 
+@app.route("/version")
+def version():
+    return "PixelForge relay version: SYNC V3"
+
 @app.route("/create")
 def create():
     code = make_code()
@@ -83,10 +87,12 @@ def status():
             "joiner_ready": room["joiner_ready"],
             "host_connected": room["host_connected"],
             "joiner_connected": room["joiner_connected"],
+            "host_data": room["host_data"],
+            "joiner_data": room["joiner_data"],
             "message_id": room["message_id"]
         })
 
-@sock.route("/ws")
+
 def websocket(ws):
     code = request.args.get("code", "")
     player = request.args.get("player", "")
